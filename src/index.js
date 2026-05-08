@@ -366,7 +366,9 @@ function questionForRound(room) {
 function matchSummary(room, sortedPlayers) {
   const game = gameById(room.selectedGameId);
   const lastQuestionIndex = game ? game.questions.length - 1 : -1;
-  const complete = Boolean(room.gameStarted && !room.roundActive && game && room.questionIndex === lastQuestionIndex);
+  const complete = Boolean(
+    room.gameStarted && !room.roundActive && room.roundEndsAt === null && game && lastQuestionIndex >= 0 && room.questionIndex === lastQuestionIndex
+  );
   if (!complete) return { started: Boolean(room.gameStarted), complete: false, winner: null };
   if (!sortedPlayers.length) return { started: true, complete: true, winner: null };
   const topScore = sortedPlayers[0].score;
@@ -719,7 +721,7 @@ if(m.type==="error")byId("joinStatus").textContent=m.message;},onClose:()=>byId(
 byId("hostMode").onclick=()=>mode("host");byId("playerMode").onclick=()=>mode("player");byId("createRoom").onclick=createRoom;byId("joinBtn").onclick=joinRoom;
 byId("gameSelect").onchange=()=>S.host.ws&&S.host.ws.send(JSON.stringify({type:"host-select-game",gameId:byId("gameSelect").value}));
 byId("startBtn").onclick=()=>S.host.ws&&S.host.ws.send(JSON.stringify({type:"host-start-game"}));byId("nextBtn").onclick=()=>S.host.ws&&S.host.ws.send(JSON.stringify({type:"host-next-question"}));byId("endBtn").onclick=()=>S.host.ws&&S.host.ws.send(JSON.stringify({type:"host-end-round"}));
-const pathMatch=location.pathname.match(/^\/join\/([A-Za-z0-9]+)/);if(pathMatch){mode("player");byId("playerCode").value=clean(pathMatch[1]);}
+const joinPathMatch=location.pathname.match(/^\/join\/([A-Za-z0-9]+)/);if(joinPathMatch){mode("player");byId("playerCode").value=clean(joinPathMatch[1]);}
 mode("host");loadCatalog().catch(()=>alert("Failed loading games"));
 </script></body></html>`;
 }
