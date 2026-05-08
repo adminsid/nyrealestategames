@@ -458,6 +458,7 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #2a4068;
 <p id="playerTimer" class="timer">Timer: --</p><div class="progress"><div id="playerTimerBar"></div></div><div id="answers" class="answers-grid"></div><p id="result" class="feedback">Choose your answer before time runs out.</p></div>
 <h3>Scoreboard</h3><table><thead><tr><th>Name</th><th>Score</th><th>Answered</th></tr></thead><tbody id="playerRows"></tbody></table></section>
 </main><script>
+const FLARE_ANIMATION_DURATION_MS=700;
 const S={host:{ws:null,room:null,token:null},player:{ws:null,hasAnswered:false},games:[],lastQuestionKey:null,timerId:null,lastTickSecond:null,currentRound:null,timeUpHandled:false,audioCtx:null};
 const byId=(id)=>document.getElementById(id);const hostPanel=byId("hostPanel"),playerPanel=byId("playerPanel");
 function clean(v){return (v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6)}
@@ -468,18 +469,20 @@ function ws({role,room,name,token,onMessage,onOpen,onClose}){const u=new URL("/a
 const s=new WebSocket(u.toString());s.onopen=()=>onOpen&&onOpen(s);s.onmessage=e=>{try{onMessage&&onMessage(JSON.parse(e.data),s)}catch{}};s.onclose=()=>onClose&&onClose();return s;}
 function getAudioCtx(){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;if(!S.audioCtx)S.audioCtx=new C();if(S.audioCtx.state==="suspended")S.audioCtx.resume();return S.audioCtx;}
 function audioTone(freq,duration,volume){const ctx=getAudioCtx();if(!ctx)return;const osc=ctx.createOscillator();const gain=ctx.createGain();
-osc.type="sine";osc.frequency.value=freq;gain.gain.value=volume;osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+duration/1000);}
+osc.type="sine";osc.frequency.value=freq;gain.gain.value=volume;osc.connect(gain);gain.connect(ctx.destination);osc.onended=()=>{osc.disconnect();gain.disconnect();};osc.start();osc.stop(ctx.currentTime+duration/1000);}
 function playTick(){audioTone(710,80,0.012)}function playCorrect(){audioTone(840,140,0.03);setTimeout(()=>audioTone(1040,180,0.028),120)}
 function playWrong(){audioTone(260,160,0.03);setTimeout(()=>audioTone(180,190,0.028),130)}function playTimeout(){audioTone(145,280,0.03)}
-function showFlare(kind){const flare=byId("resultFlare");flare.className="flare";void flare.offsetWidth;flare.className="flare show "+kind;setTimeout(()=>{flare.className="flare";},700);}
+function showFlare(kind){const flare=byId("resultFlare");flare.className="flare";void flare.offsetWidth;flare.className="flare show "+kind;setTimeout(()=>{flare.className="flare";},FLARE_ANIMATION_DURATION_MS);}
 function updateTimerUi(timerEl,barEl,round){const timer=byId(timerEl),bar=byId(barEl);const active=Boolean(round&&round.active&&round.question&&round.endsAt);const msLeft=active?Math.max(0,round.endsAt-Date.now()):0;
 if(!active){timer.textContent="Timer: --";timer.className="timer";bar.style.width="100%";return msLeft;}
 const seconds=Math.ceil(msLeft/1000);timer.textContent=msLeft>0?'Timer: '+seconds+'s':'Timer: 0s';timer.className='timer '+(msLeft<=0?'expired':seconds<=5?'urgent':'');
 const duration=Math.max(round.durationMs||15000,1);bar.style.width=(Math.max(0,Math.min(1,msLeft/duration))*100).toFixed(2)+'%';return msLeft;}
 function toggleAnswerButtons(disabled){byId("answers").querySelectorAll("button").forEach((b)=>{b.disabled=disabled;});}
 function stopRoundTicker(){if(!S.timerId)return;clearInterval(S.timerId);S.timerId=null;S.lastTickSecond=null;}
-function startRoundTicker(){if(S.timerId)return;S.lastTickSecond=null;S.timerId=setInterval(()=>{if(!S.currentRound)return;const msLeft=updateTimerUi("hostTimer","hostTimerBar",S.currentRound);updateTimerUi("playerTimer","playerTimerBar",S.currentRound);
-if(!S.currentRound.active||!S.currentRound.question||!S.currentRound.endsAt)return;const sec=Math.ceil(Math.max(0,msLeft)/1000);if(msLeft>0&&sec<=5&&sec!==S.lastTickSecond){S.lastTickSecond=sec;playTick();}
+function startRoundTicker(){if(S.timerId)return;S.lastTickSecond=null;S.timerId=setInterval(()=>{if(!S.currentRound)return;let msLeft=0;
+if(!hostPanel.classList.contains("hidden"))msLeft=updateTimerUi("hostTimer","hostTimerBar",S.currentRound);
+if(!playerPanel.classList.contains("hidden"))msLeft=updateTimerUi("playerTimer","playerTimerBar",S.currentRound)||msLeft;
+if(!S.currentRound.active||!S.currentRound.question||!S.currentRound.endsAt)return;const remainingSeconds=Math.ceil(Math.max(0,msLeft)/1000);if(msLeft>0&&remainingSeconds<=5&&remainingSeconds!==S.lastTickSecond){S.lastTickSecond=remainingSeconds;playTick();}
 if(msLeft<=0&&!S.player.hasAnswered&&!S.timeUpHandled){toggleAnswerButtons(true);byId("result").className="feedback bad";byId("result").textContent="⏰ Time is up for this question.";playTimeout();S.player.hasAnswered=true;S.timeUpHandled=true;}},200);}
 function renderQuestion(q,round){const active=round.active&&q;byId("qArea").classList.toggle("hidden",!active);if(!active){byId("result").className="feedback";byId("result").textContent="Waiting for host.";return;}
 byId("qTitle").textContent='Question '+(q.index+1)+' of '+q.total;byId("qPrompt").textContent=q.prompt;const answers=byId("answers");answers.innerHTML="";
@@ -489,7 +492,7 @@ toggleAnswerButtons(S.player.hasAnswered||round.msLeft<=0);}
 function applyState(r){S.currentRound=r.round;rows(byId("hostRows"),r.players,false);rows(byId("playerRows"),r.players,true);byId("startBtn").disabled=!r.selectedGameId;byId("nextBtn").disabled=!r.round.active;byId("endBtn").disabled=!r.round.active;
 if(r.selectedGameId)byId("gameSelect").value=r.selectedGameId;const q=r.round.question;const questionKey=q?String(q.index)+"-"+String(r.round.endsAt):"none";
 if(S.lastQuestionKey!==questionKey){S.lastQuestionKey=questionKey;S.player.hasAnswered=false;S.timeUpHandled=false;byId("result").className="feedback";byId("result").textContent="Choose your answer before time runs out.";}
-if(q){const sec=Math.ceil(Math.max(0,r.round.msLeft||0)/1000);byId("hostProgress").textContent='Question '+(q.index+1)+'/'+q.total+' • Responses '+r.round.responsesCount+'/'+r.round.totalPlayers+' • '+sec+'s left';}
+if(q){const remainingSeconds=Math.ceil(Math.max(0,r.round.msLeft||0)/1000);byId("hostProgress").textContent='Question '+(q.index+1)+'/'+q.total+' • Responses '+r.round.responsesCount+'/'+r.round.totalPlayers+' • '+remainingSeconds+'s left';}
 else byId("hostProgress").textContent="Waiting to start.";renderQuestion(q,r.round);updateTimerUi("hostTimer","hostTimerBar",r.round);updateTimerUi("playerTimer","playerTimerBar",r.round);
 if(r.round.active&&q&&r.round.endsAt)startRoundTicker();else stopRoundTicker();}
 async function loadCatalog(){const r=await fetch("/api/games");const p=await r.json();S.games=p.games||[];byId("catalog").innerHTML=S.games.map(g=>'<div class="card catalog-card"><h3>'+g.title+'</h3><p>'+g.description+'</p><p>Questions: '+g.questionCount+'</p></div>').join("");
